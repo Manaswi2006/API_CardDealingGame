@@ -1,183 +1,138 @@
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 import logging
-
-# Models
-class Card(BaseModel):
-    rank: str
-    suit: str
-    name: str
-
-class JoinGameRequest(BaseModel):
-    name: str
-    host_url: str
-
-class BetRequest(BaseModel):
-    name: str
-    amount: float
-
-class FoldRequest(BaseModel):
-    name: str
-
-class GameStatusResponse(BaseModel):
-    is_active: bool
-    pot: float
-    current_turn: Optional[str]
-    players: List[dict]
-
-class EndGameResponse(BaseModel):
-    message: str
+import random
+import requests
 
 router = APIRouter(prefix="/player", tags=["player"])
 logger = logging.getLogger(__name__)
+DEALER_API_URLl = "http://192.168.43.238:8000/docs#/"
+PLAYER_API_URL = "http://127.0.0.1:8001"
+
+# Card-related constants
+SUITS = ['H', 'D', 'C', 'S']  # Hearts, Diamonds, Clubs, Spades
+VALUES = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+
+# Additional Models
+class PlayerCards(BaseModel):
+    cards: List[str]
+
+class PotStatus(BaseModel):
+    pot: float = 0.0
 
 # In-memory player state
 players = {}
 
-# Player class aligned with models
 class PlayerState:
-    def __init__(self, name: str, balance: float = 100.0):
+    def _init_(self, name: str, balance: float = 100.0):
         self.name = name
         self.balance = balance
-        self.cards: List[Card] = []
-        self.current_bet = 0.0
+        self.cards: List[str] = []
         self.is_active = True
 
-    def place_bet(self, amount: float) -> tuple[bool, Optional[str]]:
-        if amount > self.balance:
-            return False, "Insufficient balance."
-        self.balance -= amount
-        self.current_bet += amount
-        return True, None
+    def assign_cards(self, cards: List[str]):
+        self.cards = cards
 
-    def fold(self):
-        self.is_active = False
+def generate_card() -> str:
+    """Generate a random card in the format '2D', 'AD', '10H', etc."""
+    value = random.choice(VALUES)
+    suit = random.choice(SUITS)
+    return f"{value}{suit}"
 
-# Register a player
-def register_player(player_id: str, balance: float = 100.0):
-    players[player_id] = PlayerState(player_id, balance)
-    logger.info(f"✅ Registered player {player_id} with balance {balance}")
-
-# Health check
-@router.get("/ping")
-async def ping():
-    return {"status": "ok", "message": "Player API is running"}
-
-# Core decision logic
-def decide_action(player: PlayerState, pot_size: float, current_bet: float) -> dict:
-    if not player.is_active or player.balance <= 0:
-        return {"action": "fold"}
-
-    # Initial bet scenario
-    if current_bet == 0:
-        open_amount = max(1, int(player.balance * 0.1))
-        return {"action": "bet", "amount": open_amount}
-
-    # Calculate risk and pot odds
-    pot_odds = current_bet / (pot_size if pot_size > 0 else 1)
-    balance_risk = current_bet / player.balance
-
-    # Decision logic
-    if balance_risk > 0.5:
-        return {"action": "fold"}
-
-    if pot_odds > 0.5 and balance_risk < 0.2:
-        return {"action": "bet", "amount": current_bet}
-
-    return {"action": "bet", "amount": current_bet}
-
-# Join Game
 @router.post("/join_game")
-async def join_game(request: JoinGameRequest):
+async def join_game(request: dict):
     try:
-        register_player(request.name)
-        return {"status": "joined", "player": request.name}
+        name = request.get("name")
+        if not name:
+            raise ValueError("Player name is required")
+        
+        # Create player state
+        players[name] = PlayerState(name)
+        
+        # Generate initial cards
+        initial_cards = [generate_card() for _ in range(3)]
+        players[name].assign_cards(initial_cards)
+        
+        # Notify dealer about joining
+        try:
+            response = requests.post(f"{DEALER_API_URLl}/join_game", json={
+                "name": name,
+                "host_url": PLAYER_API_URL
+            })
+            response.raise_for_status()
+        except Exception as e:
+            logger.error(f"Failed to notify dealer: {e}")
+            raise HTTPException(status_code=500, detail="Could not join game")
+        
+        logger.info(f"✅ Player {name} joined the game with cards {initial_cards}")
+        
+        return {
+            "status": "joined", 
+            "player": name, 
+            "cards": initial_cards
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Player Turn
 @router.post("/{player_id}/turn")
-async def player_turn(player_id: str, pot_size: float, current_bet: float):
+async def player_turn(player_id: str, request: dict):
+    # Extract parameters
+    pot_size = request.get('pot', 0)
+    current_bet = request.get('current_bet', 0)
+    
     if player_id not in players:
         raise HTTPException(status_code=404, detail="Player not found")
 
     player = players[player_id]
-    decision = decide_action(player, pot_size, current_bet)
-    action = decision["action"]
-    amount = decision.get("amount", 0)
+    
+    # If player is not active, automatically fold
+    if not player.is_active:
+        return {"action": "fold"}
 
-    logger.info(f"🎯 Player {player_id} decision: {action} {'₹' + str(amount) if action == 'bet' else ''}")
+    # Simple decision logic
+    # Randomly choose between bet, fold, and show
+    actions = ['bet', 'fold', 'show']
+    
+    # Bias towards betting if player has good cards
+    # This is a very simple heuristic and can be made more sophisticated
+    good_card_values = ['10', 'J', 'Q', 'K', 'A']
+    good_card_count = sum(1 for card in player.cards if any(val in card for val in good_card_values))
+    
+    if good_card_count >= 2:
+        actions = ['bet', 'bet', 'show', 'fold']  # More likely to bet or show
+    
+    action = random.choice(actions)
+    
+    # Determine bet amount
+    if action == 'bet':
+        # Bet between 10% to 30% of current bet or a minimum of 10
+        amount = max(10, int(current_bet * random.uniform(0.1, 0.3)))
+        result = {"action": "bet", "amount": amount}
+    elif action == 'show':
+        result = {"action": "show"}
+    else:
+        result = {"action": "fold"}
+    
+    logger.info(f"🎯 Player {player_id} decision: {result}")
+    
+    return result
 
-    if action == "bet":
-        success, error = player.place_bet(amount)
-        if not success:
-            raise HTTPException(status_code=400, detail=error)
-
-    elif action == "fold":
-        player.fold()
-
-    return {
-        "action": action, 
-        "amount": amount if action == "bet" else 0
-    }
-
-# Bet Endpoint
-@router.post("/{player_id}/bet")
-async def place_bet(player_id: str, request: BetRequest):
+@router.get("/{player_id}/cards")
+async def get_player_cards(player_id: str):
     if player_id not in players:
         raise HTTPException(status_code=404, detail="Player not found")
     
-    player = players[player_id]
-    success, error = player.place_bet(request.amount)
-    
-    if not success:
-        raise HTTPException(status_code=400, detail=error)
-    
-    return {"status": "bet placed", "new_balance": player.balance}
+    return PlayerCards(cards=players[player_id].cards)
 
-# Fold Endpoint
-@router.post("/{player_id}/fold")
-async def fold(player_id: str):
-    if player_id not in players:
-        raise HTTPException(status_code=404, detail="Player not found")
-    
-    player = players[player_id]
-    player.fold()
-    return {"status": "folded"}
-
-# Show Endpoint
-@router.post("/{player_id}/show")
-async def show(player_id: str):
-    if player_id not in players:
-        raise HTTPException(status_code=404, detail="Player not found")
-    
-    return {"status": "show initiated"}
-
-# Game Status Endpoint
-@router.get("/game_status")
-async def get_game_status():
-    return GameStatusResponse(
-        is_active=True,  # This would be dynamically set in a real implementation
-        pot=0.0,
-        current_turn=None,
-        players=[
-            {
-                "name": player.name, 
-                "balance": player.balance, 
-                "is_active": player.is_active
-            } for player in players.values()
-        ]
-    )
-
-# End Game Endpoint
-@router.post("/end_game")
-async def end_game():
-    # Reset all players
-    for player in players.values():
-        player.balance = 100.0
-        player.cards = []
-        player.current_bet = 0.0
-        player.is_active = True
-    
-    return "Game ended successfully"
+@router.get("/pot")
+async def get_pot_status():
+    try:
+        # Fetch pot status from dealer
+        response = requests.get(f"{DEALER_API_URLl}/pot")
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logger.error(f"Failed to fetch pot status: {e}")
+        return PotStatus()
