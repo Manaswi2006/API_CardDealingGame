@@ -126,7 +126,6 @@ curl -X POST http://127.0.0.1:8001/player/player123/turn \
 
 ## 🤝 Author
 
-Built with ♥ by an intermediate FastAPI dev building smart, scalable card bots 🎴  
-Drop a star ⭐ if it helped you, or fork and make your own bot army.
+Built with ♥ by Manaswi Singh, Mayank Yadav, Paridhi Kotarya, Parth Goyal
 
 ---
