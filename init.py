@@ -1,21 +1,31 @@
-#connec the app to the their api 
+# init.py
 import logging
-import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
+from playerapi import router as player_router
 import uvicorn
 
-app = FastAPI()
-PLAYER_NAME = "Player1"
-PLAYER_API_URL = "http://127.0.0.1:8001"
-DEALER_API_URL = "http://127.0.0.1:8000"
+# UwU Config class for settings
+class Settings:
+    dealer_url: str = "http://192.168.43.238:8000/docs#/"
+    player_url: str = "http://127.0.0.1:8001"
+    initial_balance: int = 1000
 
-# Configure logging
+settings = Settings()
+
+# Logging setup ~nya
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
+# App init uwu
+app = FastAPI(title="Teen Patti Player API", version="1.0")
+app.include_router(player_router)
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("🚀 Player API service started on %s with dealer @ %s", settings.player_url, settings.dealer_url)
+
 if __name__ == "__main__":
-    logger.info("Starting Player API...")
-    uvicorn.run(app, host="127.0.0.1", port=8001)
+    uvicorn.run("init:app", host="0.0.0.0", port=8001, reload=True)
