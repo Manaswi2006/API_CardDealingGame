@@ -1,7 +1,7 @@
 # playerapi.py
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from config import settings
+
 import logging
 
 router = APIRouter(prefix="/player", tags=["player"])
@@ -23,7 +23,7 @@ class TurnResponse(BaseModel):
 # Register a player (called externally at game start)
 def register_player(player_id: str, balance: int = None):
     if balance is None:
-        balance = settings.initial_balance
+        balance = 0
     players[player_id] = {
         "balance": balance,
         "in_game": True,

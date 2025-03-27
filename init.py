@@ -17,7 +17,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
 )
-logger = logging.getLogger(_name_)
+logger = logging.getLogger(__name__)
 
 # App init uwu
 app = FastAPI(title="Teen Patti Player API", version="1.0")
@@ -27,5 +27,5 @@ app.include_router(player_router)
 async def startup_event():
     logger.info("🚀 Player API service started on %s with dealer @ %s", settings.player_url, settings.dealer_url)
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     uvicorn.run("init:app", host="0.0.0.0", port=8001, reload=True)
