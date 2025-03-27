@@ -2,15 +2,13 @@
 import logging
 from fastapi import FastAPI
 from playerapi import router as player_router
-from pydantic_settings import BaseSettings
+import uvicorn
 
 # UwU Config class for settings
-class Settings(BaseSettings):
+class Settings:
     dealer_url: str = "http://127.0.0.1:8000"
+    player_url: str = "http://127.0.0.1:8001"
     initial_balance: int = 1000
-
-    class Config:
-        env_file = ".env"
 
 settings = Settings()
 
@@ -19,7 +17,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(_name_)
 
 # App init uwu
 app = FastAPI(title="Teen Patti Player API", version="1.0")
@@ -27,10 +25,7 @@ app.include_router(player_router)
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("🚀 Player API service started on port 8001 with dealer @ %s", settings.dealer_url)
+    logger.info("🚀 Player API service started on %s with dealer @ %s", settings.player_url, settings.dealer_url)
 
-# Optional: Run directly
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run(app, host="0.0.0.0", port=8001)
-
+if _name_ == "_main_":
+    uvicorn.run("init:app", host="0.0.0.0", port=8001, reload=True)
