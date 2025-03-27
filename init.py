@@ -6,7 +6,7 @@ import uvicorn
 
 # UwU Config class for settings
 class Settings:
-    dealer_url: str = "http://127.0.0.1:8000"
+    dealer_url: str = "http://192.168.43.238:8000/docs#/"
     player_url: str = "http://127.0.0.1:8001"
     initial_balance: int = 1000
 
